@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{option::Option, rc::Rc, cell::{RefCell, Ref}};
+use std::{option::Option, rc::Rc, cell::{RefCell}};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Direction {
@@ -7,6 +7,17 @@ pub enum Direction {
     EAST,
     NORTH,
     SOUTH
+}
+
+impl Direction {
+    fn get_opposite(&self) -> Direction {
+        match self {
+            Direction::WEST => Direction::EAST,
+            Direction::EAST => Direction::WEST,
+            Direction::NORTH => Direction::SOUTH,
+            Direction::SOUTH => Direction::NORTH,
+        }
+    }
 }
 
 pub struct Field {
@@ -91,15 +102,6 @@ pub struct Transition {
     field2: Rc<RefCell<Field>>,
 }
 
-fn get_opposite_direction(direction: &Direction) -> Direction {
-    match direction {
-        Direction::WEST => Direction::EAST,
-        Direction::EAST => Direction::WEST,
-        Direction::NORTH => Direction::SOUTH,
-        Direction::SOUTH => Direction::NORTH,
-    }
-}
-
 impl Transition {
     fn new(doors: bool, direction: &Direction, field1: Rc<RefCell<Field>>, field2: Rc<RefCell<Field>>) -> Rc<RefCell<Self>> {
         let t = Transition {
@@ -112,7 +114,7 @@ impl Transition {
         let mut f1 = field1.borrow_mut();
         let mut f2 = field2.borrow_mut();
         f1.add_transition(direction, Rc::clone(&rt));
-        f2.add_transition(&get_opposite_direction(direction), Rc::clone(&rt));
+        f2.add_transition(&direction.get_opposite(), Rc::clone(&rt));
         rt
     }
 
