@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{option::Option, rc::Rc, cell::RefCell};
+use std::{option::Option, rc::Rc, cell::{RefCell, Ref}};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Direction {
@@ -34,7 +34,7 @@ impl Field {
         }
     }
 
-    pub fn add_transition(&mut self, direction: Direction, transition: Rc<RefCell<Transition>>) {
+    pub fn add_transition(&mut self, direction: &Direction, transition: Rc<RefCell<Transition>>) {
         let f = Some(transition);
         match direction {
             Direction::WEST => self.w = f,
@@ -91,13 +91,29 @@ pub struct Transition {
     field2: Rc<RefCell<Field>>,
 }
 
+fn get_opposite_direction(direction: &Direction) -> Direction {
+    match direction {
+        Direction::WEST => Direction::EAST,
+        Direction::EAST => Direction::WEST,
+        Direction::NORTH => Direction::SOUTH,
+        Direction::SOUTH => Direction::NORTH,
+    }
+}
+
 impl Transition {
-    fn new(doors: bool, field1: Rc<RefCell<Field>>, field2: Rc<RefCell<Field>>) -> Self {
-        Transition {
+    fn new(doors: bool, direction: &Direction, field1: Rc<RefCell<Field>>, field2: Rc<RefCell<Field>>) -> Rc<RefCell<Self>> {
+        let t = Transition {
             doors: doors,
-            field1: field1,
-            field2: field2,
-        }
+            field1: Rc::clone(&field1),
+            field2: Rc::clone(&field2),
+        };
+        let rt = Rc::new(RefCell::new(t));
+
+        let mut f1 = field1.borrow_mut();
+        let mut f2 = field2.borrow_mut();
+        f1.add_transition(direction, Rc::clone(&rt));
+        f2.add_transition(&get_opposite_direction(direction), Rc::clone(&rt));
+        rt
     }
 
     pub fn has_doors(&self) -> bool {
@@ -119,7 +135,7 @@ impl fmt::Display for Transition {
         if self.doors {
             t = "|";
         }
-        write!(f, "{} -{}> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
+        write!(f, "{} <-{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
     }
 }
 
@@ -129,13 +145,14 @@ impl fmt::Debug for Transition {
         if self.doors {
             t = "|";
         }
-        write!(f, "{} -{}> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
+        write!(f, "{} <-{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
     }
 }
 
 impl PartialEq for Transition {
     fn eq(&self, other: &Self) -> bool {
-        return self.get_field1() == other.get_field1() && self.get_field2() == other.get_field2()
+        return (self.get_field1() == other.get_field1() && self.get_field2() == other.get_field2()) ||
+            (self.get_field2() == other.get_field1() && self.get_field1() == other.get_field2())
     }
 }
 
@@ -231,31 +248,9 @@ mod test {
     use super::{Field, Direction, Transition};
 
     fn tie_graph(a: &[Rc<RefCell<Field>>]) {
-        let mut mf1 = a[0].borrow_mut();
-        let mut mf2 = a[1].borrow_mut();
-        let mut mf3 = a[2].borrow_mut();
-        let mut mf4 = a[3].borrow_mut();
-
-        let t1 = Rc::new(RefCell::new(Transition::new(true, Rc::clone(&a[0]), Rc::clone(&a[1]))));
-        let t2 = Rc::new(RefCell::new(Transition::new(false, Rc::clone(&a[1]), Rc::clone(&a[0]))));
-        let t3 = Rc::new(RefCell::new(Transition::new(false, Rc::clone(&a[1]), Rc::clone(&a[3]))));
-        let t4 = Rc::new(RefCell::new(Transition::new(false, Rc::clone(&a[3]), Rc::clone(&a[1]))));
-        let t5 = Rc::new(RefCell::new(Transition::new(true, Rc::clone(&a[0]), Rc::clone(&a[2]))));
-        let t6 = Rc::new(RefCell::new(Transition::new(false, Rc::clone(&a[2]), Rc::clone(&a[0]))));
-
-        mf1.add_transition(Direction::EAST, t1);
-        mf2.add_transition(Direction::WEST, t2);
-        mf2.add_transition(Direction::SOUTH, t3);
-        mf4.add_transition(Direction::NORTH, t4);
-        mf1.add_transition(Direction::SOUTH, t5);
-        mf3.add_transition(Direction::NORTH, t6);
-
-
-        // mf2.add_transition(Direction::WEST, false, Rc::clone(&a[0])); // back.
-        // mf1.add_transition(Direction::SOUTH, true, Rc::clone(&a[2]));
-        // mf2.add_transition(Direction::NORTH, false, Rc::clone(&a[0])); // back.
-        // mf2.add_transition(Direction::SOUTH, true, Rc::clone(&a[3]));
-        // mf3.add_transition(Direction::EAST, false, Rc::clone(&a[3]));
+        Rc::new(RefCell::new(Transition::new(true, &Direction::EAST, Rc::clone(&a[0]), Rc::clone(&a[1]))));
+        Rc::new(RefCell::new(Transition::new(false, &Direction::SOUTH, Rc::clone(&a[1]), Rc::clone(&a[3]))));
+        Rc::new(RefCell::new(Transition::new(true, &Direction::SOUTH, Rc::clone(&a[0]), Rc::clone(&a[2]))));
     }
 
     #[test]
@@ -299,10 +294,6 @@ mod test {
         println!();
 
         let p = has_path(Rc::clone(&rf2), Rc::clone(&rf3));
-        if let Some(pp) = &p {
-            pp.print_path();
-        }
-        assert_eq!(p.is_some(), true);
-        assert_eq!(p.unwrap().cost(), 2);
+        assert_eq!(p.is_some(), false);
     }
 }
