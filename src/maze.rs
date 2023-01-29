@@ -20,7 +20,7 @@ impl Direction {
     }
 }
 
-pub struct Field {
+pub struct SimpleField {
     x: u8,
     y: u8,
     w: OptionalTransition,
@@ -31,9 +31,9 @@ pub struct Field {
     end: bool,
 }
 
-impl Field {
+impl SimpleField {
     pub fn new(x: u8, y: u8, key: bool, end: bool) -> Self {
-        Field {
+        SimpleField {
             x: x,
             y: y,
             w: None,
@@ -78,32 +78,34 @@ impl Field {
     }
 }
 
-impl fmt::Display for Field {
+impl fmt::Display for SimpleField {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({},{})", self.x, self.y)
     }
 }
 
-impl fmt::Debug for Field {
+impl fmt::Debug for SimpleField {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({},{})", self.x, self.y)
     }
 }
 
-impl PartialEq for Field {
+impl PartialEq for SimpleField {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y
     }
 }
 
+pub type Field = Rc<RefCell<SimpleField>>;
+
 pub struct Transition {
     doors: bool,
-    field1: Rc<RefCell<Field>>,
-    field2: Rc<RefCell<Field>>,
+    field1: Field,
+    field2: Field,
 }
 
 impl Transition {
-    fn new(doors: bool, direction: &Direction, field1: Rc<RefCell<Field>>, field2: Rc<RefCell<Field>>) -> Rc<RefCell<Self>> {
+    pub fn new(doors: bool, direction: &Direction, field1: Field, field2: Field) -> Rc<RefCell<Self>> {
         let t = Transition {
             doors: doors,
             field1: Rc::clone(&field1),
@@ -122,11 +124,11 @@ impl Transition {
         self.doors
     }
 
-    pub fn get_field1(&self) -> Rc<RefCell<Field>> {
+    pub fn get_field1(&self) -> Field {
         Rc::clone(&self.field1)
     }
 
-    pub fn get_field2(&self) -> Rc<RefCell<Field>> {
+    pub fn get_field2(&self) -> Field {
         Rc::clone(&self.field2)
     }
 }
@@ -184,11 +186,11 @@ impl Path {
     }
 }
 
-fn has_path(f1: Rc<RefCell<Field>>, f2: Rc<RefCell<Field>>) -> Option<Path> {
+fn has_path(f1: Field, f2: Field) -> Option<Path> {
     return has_path_keys(f1, f2, 0, &mut Vec::new());
 }
 
-fn has_path_keys(f1: Rc<RefCell<Field>>, f2: Rc<RefCell<Field>>, mut keys: i8, transitions: &mut Vec<Rc<RefCell<Transition>>>) -> Option<Path> {
+fn has_path_keys(f1: Field, f2: Field, mut keys: i8, transitions: &mut Vec<Rc<RefCell<Transition>>>) -> Option<Path> {
     println!("Comparing: {:} and {:}", f1.borrow(), f2.borrow());
     if f1 == f2 {
         return Some(Path { steps: Vec::new() });
@@ -247,32 +249,32 @@ mod test {
 
     use crate::maze::has_path;
 
-    use super::{Field, Direction, Transition};
+    use super::{SimpleField, Direction, Transition, Field};
 
-    fn tie_graph(a: &[Rc<RefCell<Field>>]) {
-        Rc::new(RefCell::new(Transition::new(true, &Direction::EAST, Rc::clone(&a[0]), Rc::clone(&a[1]))));
-        Rc::new(RefCell::new(Transition::new(false, &Direction::SOUTH, Rc::clone(&a[1]), Rc::clone(&a[3]))));
-        Rc::new(RefCell::new(Transition::new(true, &Direction::SOUTH, Rc::clone(&a[0]), Rc::clone(&a[2]))));
+    fn tie_graph(a: &[Field]) {
+        Transition::new(true, &Direction::EAST, Rc::clone(&a[0]), Rc::clone(&a[1]));
+        Transition::new(false, &Direction::SOUTH, Rc::clone(&a[1]), Rc::clone(&a[3]));
+        Transition::new(true, &Direction::SOUTH, Rc::clone(&a[0]), Rc::clone(&a[2]));
     }
 
     #[test]
     fn basics() {
-        let f1 = Field::new(0, 0, true, false);
+        let f1 = SimpleField::new(0, 0, true, false);
         assert_eq!(f1.has_key(), true);
         assert_eq!(f1.is_end(), false);
         let rf1 = Rc::new(RefCell::new(f1));
 
-        let f2 = Field::new(1, 0, false, false);
+        let f2 = SimpleField::new(1, 0, false, false);
         assert_eq!(f2.has_key(), false);
         assert_eq!(f2.is_end(), false);
         let rf2 = Rc::new(RefCell::new(f2));
 
-        let f3 = Field::new(0, 1, false, false);
+        let f3 = SimpleField::new(0, 1, false, false);
         assert_eq!(f3.has_key(), false);
         assert_eq!(f3.is_end(), false);
         let rf3 = Rc::new(RefCell::new(f3));
 
-        let f4 = Field::new(1, 1, false, true);
+        let f4 = SimpleField::new(1, 1, false, true);
         assert_eq!(f4.has_key(), false);
         assert_eq!(f4.is_end(), true);
         let rf4 = Rc::new(RefCell::new(f4));
