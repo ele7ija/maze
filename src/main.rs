@@ -76,37 +76,49 @@ fn get_move(x: u8, y: u8, direction: maze::Direction) -> Option<usize> {
 fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
     let (mut x, mut y, mut w, mut e, mut n, mut s, mut wd, mut ed, mut nd, mut sd) = (0, 0, false, false, false, false, false, false, false, false);
     content.chars().enumerate().for_each(|(i, c)| {
-        println!("{}:{}", i, c);
+        // println!("{}:{}", i, c);
         if i % 15 == 14 {
-            println!("({}, {}): {}, {}, {}, {}", x, y, w, e, n, s);
+            // println!("({}, {}): {}, {}, {}, {}", x, y, w, e, n, s);
             let f1 = get_index(x, y);
             let rf1 = fields.get(f1).unwrap();
             if w {
                 let f2 = get_move(x, y, maze::Direction::WEST);
                 if f2.is_some() {
-                    let rf2 = fields.get(f2.unwrap()).unwrap();
-                    maze::Transition::new(wd, &maze::Direction::WEST, Rc::clone(rf1), Rc::clone(rf2));
+                    let rf2 = fields.get(f2.unwrap());
+                    if rf2.is_some() {
+                        println!("Tying WEST: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), wd);
+                        maze::Transition::new(wd, &maze::Direction::WEST, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                    }
                 }
             }
             if e {
                 let f2 = get_move(x, y, maze::Direction::EAST);
                 if f2.is_some() {
-                    let rf2 = fields.get(f2.unwrap()).unwrap();
-                    maze::Transition::new(ed, &maze::Direction::EAST, Rc::clone(rf1), Rc::clone(rf2));
+                    let rf2 = fields.get(f2.unwrap());
+                    if rf2.is_some() {
+                        println!("Tying EAST: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), ed);
+                        maze::Transition::new(ed, &maze::Direction::EAST, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                    }
                 }
             }
             if n {
                 let f2 = get_move(x, y, maze::Direction::NORTH);
                 if f2.is_some() {
-                    let rf2 = fields.get(f2.unwrap()).unwrap();
-                    maze::Transition::new(nd, &maze::Direction::NORTH, Rc::clone(rf1), Rc::clone(rf2));
+                    let rf2 = fields.get(f2.unwrap());
+                    if rf2.is_some() {
+                        println!("Tying NORTH: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), nd);
+                        maze::Transition::new(nd, &maze::Direction::NORTH, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                    }
                 }
             }
             if s {
                 let f2 = get_move(x, y, maze::Direction::SOUTH);
                 if f2.is_some() {
-                    let rf2 = fields.get(f2.unwrap()).unwrap();
-                    maze::Transition::new(sd, &maze::Direction::SOUTH, Rc::clone(rf1), Rc::clone(rf2));
+                    let rf2 = fields.get(f2.unwrap());
+                    if rf2.is_some() {
+                        println!("Tying SOUTH: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), sd);
+                        maze::Transition::new(sd, &maze::Direction::SOUTH, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                    }
                 }
             }
 
@@ -156,5 +168,10 @@ fn main() {
 
     let mut fields = read_fields(&content);
     tie_fields(&content, &mut fields);
-
+    let p = maze::has_path(Rc::clone(&fields[0]), Rc::clone(&fields[47]));
+    if p.is_some() {
+        p.unwrap().print_path();
+    } else {
+        println!("Path not found.")
+    }
 }

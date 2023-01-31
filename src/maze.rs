@@ -1,12 +1,12 @@
 use core::fmt;
-use std::{option::Option, rc::Rc, cell::{RefCell}};
+use std::{option::Option, rc::Rc, cell::{RefCell}, thread::sleep, time};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Direction {
-    WEST,
+    SOUTH,
     EAST,
     NORTH,
-    SOUTH
+    WEST,
 }
 
 impl Direction {
@@ -114,9 +114,9 @@ impl Transition {
         let rt = Rc::new(RefCell::new(t));
 
         let mut f1 = field1.borrow_mut();
-        let mut f2 = field2.borrow_mut();
+        // let mut f2 = field2.borrow_mut();
         f1.add_transition(direction, Rc::clone(&rt));
-        f2.add_transition(&direction.get_opposite(), Rc::clone(&rt));
+        // f2.add_transition(&direction.get_opposite(), Rc::clone(&rt));
         rt
     }
 
@@ -135,28 +135,28 @@ impl Transition {
 
 impl fmt::Display for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut t = "";
+        let mut t = "-";
         if self.doors {
             t = "|";
         }
-        write!(f, "{} <-{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
+        write!(f, "{} -{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
     }
 }
 
 impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut t = "";
+        let mut t = "-";
         if self.doors {
             t = "|";
         }
-        write!(f, "{} <-{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
+        write!(f, "{} -{}-> {}", self.get_field1().borrow(), t, self.get_field2().borrow())
     }
 }
 
 impl PartialEq for Transition {
     fn eq(&self, other: &Self) -> bool {
-        return (self.get_field1() == other.get_field1() && self.get_field2() == other.get_field2()) ||
-            (self.get_field2() == other.get_field1() && self.get_field1() == other.get_field2())
+        return self.get_field1() == other.get_field1() && self.get_field2() == other.get_field2()
+            // || (self.get_field2() == other.get_field1() && self.get_field1() == other.get_field2())
     }
 }
 
@@ -167,10 +167,10 @@ pub struct Path {
 }
 
 impl Path {
-    fn cost(&self) -> usize {
+    pub fn cost(&self) -> usize {
         return self.steps.len();
     }
-    fn print_path(&self) {
+    pub fn print_path(&self) {
         let n = self.steps.len();
         self.steps.iter().rev().enumerate().for_each(|(i, x)| {
             print!("{:?}", x);
@@ -186,21 +186,78 @@ impl Path {
     }
 }
 
-fn has_path(f1: Field, f2: Field) -> Option<Path> {
-    return has_path_keys(f1, f2, 0, &mut Vec::new());
+pub fn has_path(f1: Field, f2: Field) -> Option<Path> {
+    let mut k = Keys::new();
+    if let Some((path, _)) = has_path_keys(f1, f2, &mut k, &mut Vec::new(), None) {
+        return Some(path)
+    }
+    None
 }
 
-fn has_path_keys(f1: Field, f2: Field, mut keys: i8, transitions: &mut Vec<Rc<RefCell<Transition>>>) -> Option<Path> {
+pub struct Keys {
+    fields: Vec<Field>,
+    total: u16,
+}
+
+impl Keys {
+    pub fn new() -> Self {
+        Keys {
+            fields: Vec::new(),
+            total: 0,
+        }
+    }
+
+    pub fn add(&mut self, f: Field) -> bool {
+        if self.fields.contains(&f) {
+            return false;
+        }
+        self.fields.push(f);
+        self.total += 1;
+        true
+    }
+
+    pub fn add_use(&mut self) {
+        self.total += 1;
+    }
+
+    pub fn remove_use(&mut self) -> bool {
+        if self.total == 0 {
+            return false;
+        }
+        self.total -= 1;
+        true
+    }
+
+    pub fn remove(&mut self) {
+        self.fields.pop();
+        self.total -= 1;
+    }
+}
+
+fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Rc<RefCell<Transition>>>, mut min_transitions: Option<usize>) -> Option<(Path, usize)> {
+    // sleep(time::Duration::from_secs(2));
     println!("Comparing: {:} and {:}", f1.borrow(), f2.borrow());
     if f1 == f2 {
-        return Some(Path { steps: Vec::new() });
+        return Some((Path { steps: Vec::new() }, transitions.len()));
+    }
+    if let Some(curr_min_transition) = min_transitions {
+        if transitions.len() == curr_min_transition {
+            println!("Better path was already found.");
+            return None;
+        }
     }
     let bf1 = f1.borrow();
+    let mut used_key = false;
     if bf1.has_key() {
-        keys += 1;
-        println!("keys: {} (+1)", keys);
+        if keys.add(Rc::clone(&f1)) {
+            used_key = true;
+            // println!("keys: {} (+1)", keys.total);
+        } else {
+            println!("key on field: {} already used.", bf1);
+        }
     }
-    let directions = [Direction::WEST, Direction::EAST, Direction::NORTH, Direction::SOUTH];
+    println!("keys: {}", keys.total);
+    let directions = [Direction::SOUTH, Direction::EAST, Direction::WEST, Direction::NORTH];
     let mut path: Option<Path> = None;
     for d in directions {
         let t_pos = bf1.get_transition(d);
@@ -212,35 +269,43 @@ fn has_path_keys(f1: Field, f2: Field, mut keys: i8, transitions: &mut Vec<Rc<Re
         if !transitions.contains(&Rc::clone(&t_ptr)) {
             let t = t_ptr.borrow();
             let (doors, f) = (t.doors, Rc::clone(&t.get_field2()));
-                let mut keys_left = keys;
-                if doors {
-                    keys_left -= 1;
-                    println!("keys: {} (-1)", keys_left);
-                }
-                if keys_left == -1 {
-                    println!("no keys left!");
+            if doors {
+                if keys.remove_use() {
+                    println!("keys: {} (-1)", keys.total);
                 } else {
-                    transitions.push(Rc::clone(&t_ptr));
-                    println!("transitions expanded to: {:?}", transitions);
-                    if let Some(mut steps) = has_path_keys(f, Rc::clone(&f2), keys_left, transitions) {
-                        if let Some(curr_path) = &path {
-                            if steps.cost() + 1 < curr_path.cost() {
-                                steps.add_step(d);
-                                path = Some(steps);
-                            }
-                        } else {
-                            steps.add_step(d);
-                            path = Some(steps);
-                        }
-                    }
-                    transitions.pop();
-                    println!("Removing from transitions: {:?}", transitions);
+                    println!("no keys left!");
+                    continue;
                 }
+            }
+            transitions.push(Rc::clone(&t_ptr));
+            println!("transitions expanded to: {:?}", transitions);
+            if let Some((mut steps, new_min_transitions)) = has_path_keys(f, Rc::clone(&f2), keys, transitions, min_transitions) {
+                if let Some(curr_path) = &path {
+                    if steps.cost() + 1 < curr_path.cost() {
+                        steps.add_step(d);
+                        path = Some(steps);
+                        min_transitions = Some(new_min_transitions);
+                    }
+                } else {
+                    steps.add_step(d);
+                    path = Some(steps);
+                    min_transitions = Some(new_min_transitions);
+                }
+            }
+            let rt = transitions.pop();
+            println!("Removed: {}", rt.unwrap().borrow());
+            if doors {
+                keys.add_use();
+            }
         } else {
-            println!("Not adding transition: {:?} because it's been already explored.", t_ptr.borrow());
+            // println!("Not adding transition: {:?} because it's been already explored.", t_ptr.borrow());
         }
     }
-    return path;
+    if used_key {
+        keys.remove();
+        println!("keys: {} (-1)", keys.total);
+    }
+    return path.and_then(|p| Some((p, min_transitions.unwrap())));
 }
 
 #[cfg(test)]
@@ -299,5 +364,33 @@ mod test {
 
         let p = has_path(Rc::clone(&rf2), Rc::clone(&rf3));
         assert_eq!(p.is_some(), false);
+    }
+
+    #[test]
+    fn not_closest() {
+        let f1 = SimpleField::new(0, 0, false, false);
+        let rf1 = Rc::new(RefCell::new(f1));
+
+        let f2 = SimpleField::new(0, 1, false, false);
+        let rf2 = Rc::new(RefCell::new(f2));
+
+        let f3 = SimpleField::new(1, 1, true, false);
+        let rf3 = Rc::new(RefCell::new(f3));
+
+        let f4 = SimpleField::new(0, 2, false, true);
+        let rf4 = Rc::new(RefCell::new(f4));
+
+        Transition::new(false, &Direction::SOUTH, Rc::clone(&rf1), Rc::clone(&rf2));
+        Transition::new(false, &Direction::NORTH, Rc::clone(&rf2), Rc::clone(&rf1));
+        Transition::new(true, &Direction::SOUTH, Rc::clone(&rf2), Rc::clone(&rf4));
+        Transition::new(false, &Direction::NORTH, Rc::clone(&rf4), Rc::clone(&rf2));
+        Transition::new(false, &Direction::EAST, Rc::clone(&rf2), Rc::clone(&rf3));
+        Transition::new(false, &Direction::WEST, Rc::clone(&rf3), Rc::clone(&rf2));
+
+        let p = has_path(Rc::clone(&rf1), Rc::clone(&rf4));
+        assert_eq!(p.is_some(), true);
+        if let Some(pp) = &p {
+            pp.print_path();
+        }
     }
 }
