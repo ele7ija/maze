@@ -1,7 +1,7 @@
-use std::{env, fs, process, sync::{Mutex, Arc}};
+use std::{env, fs, process, sync::{Mutex, Arc}, time::Instant};
 use maze::maze;
 
-const USAGE: &str = "maze <file_path>\n\nInputs:\n\tfile_path: Path to a file that contains the maze.";
+const USAGE: &str = "maze <file_path> <mode>\n\nInputs:\n\tfile_path: Path to a file that contains the maze.\n\tmode: accepted values are 's' or 'p', serial or parallel mode.";
 const MAZE_X: u8 = 9;
 const MAZE_Y: u8 = 6;
 
@@ -90,7 +90,7 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying WEST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), wd);
+                        // println!("Tying WEST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), wd);
                         maze::Transition::new(wd, &maze::Direction::WEST, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
@@ -100,7 +100,7 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying EAST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), ed);
+                        // println!("Tying EAST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), ed);
                         maze::Transition::new(ed, &maze::Direction::EAST, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
@@ -110,7 +110,7 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying NORTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), nd);
+                        // println!("Tying NORTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), nd);
                         maze::Transition::new(nd, &maze::Direction::NORTH, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
@@ -120,7 +120,7 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying SOUTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), sd);
+                        // println!("Tying SOUTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), sd);
                         maze::Transition::new(sd, &maze::Direction::SOUTH, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
@@ -155,11 +155,12 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() != 2 {
+    if args.len() != 3 {
         println!("{}", USAGE);
         return 
     }
     let file_path = &args[1];
+    let mode = &args[2];
 
     let content: String;
     match fs::read_to_string(file_path) {
@@ -172,11 +173,19 @@ fn main() {
 
     let (mut fields, ends) = read_fields(&content);
     tie_fields(&content, &mut fields);
+    let mut p: Option<maze::Path> = None;
+    let start = Instant::now();
+    if mode == "p" {
+        p = maze::min_path(Arc::clone(&fields[0]), ends, maze::Mode::PARALLEL);
+    } else {
+        p = maze::min_path(Arc::clone(&fields[0]), ends, maze::Mode::SERIAL);
+    }
     // let p = maze::has_path(Arc::clone(&fields[0]), Arc::clone(&fields[47]));
-    let p = maze::min_path(Arc::clone(&fields[0]), ends);
+    let duration = start.elapsed();
     if p.is_some() {
         p.unwrap().print_path();
     } else {
         println!("Path not found.")
     }
+    println!("\nin: {:?}", duration);
 }

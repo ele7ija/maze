@@ -1,7 +1,7 @@
-use core::fmt;
-use std::{option::Option, thread, sync::{Arc, Mutex}, fmt::Debug};
+use core::{fmt, time};
+use std::{option::Option, thread::{self, sleep, JoinHandle}, sync::{Arc, Mutex}, fmt::Debug, cmp::Ordering, collections::BinaryHeap};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub enum Direction {
     SOUTH,
     EAST,
@@ -186,14 +186,29 @@ impl Path {
     }
 }
 
-pub fn min_path(f1: Field, ends: Vec<Field>) -> Option<Path> {
+#[derive(PartialEq)]
+pub enum Mode {
+    PARALLEL,
+    SERIAL
+}
+
+pub fn min_path(f1: Field, ends: Vec<Field>, mode: Mode) -> Option<Path> {
     let mut handles: Vec<thread::JoinHandle<Option<Path>>> = Vec::new();
     for end in ends {
         let brf1 = Arc::clone(&f1);
         let brend = Arc::clone(&end);
-        handles.push(thread::spawn(|| {
-            has_path(brf1, brend)
-        }));
+        let handle: JoinHandle<_>;
+        if mode == Mode::PARALLEL {
+            handle = thread::spawn(move || {
+                has_path(brf1, brend)
+            });
+        } else {
+            let result = has_path(brf1, brend);
+            handle = thread::spawn(|| {
+                result
+            });
+        }
+        handles.push(handle);
     }
     let mut min: Option<Path> = None;
     for handle in handles {
@@ -206,7 +221,7 @@ pub fn min_path(f1: Field, ends: Vec<Field>) -> Option<Path> {
             continue;
         }
         let new_min = got_min.unwrap();
-        new_min.print_path();
+        // new_min.print_path();
         let curr_min = min.unwrap();
         if new_min.cost() < curr_min.cost() {
             min = Some(new_min);
@@ -303,15 +318,73 @@ fn safe_equals_t(t1: Arc<Mutex<Transition>>, t2: Arc<Mutex<Transition>>) -> bool
     return safe_equals(Arc::clone(&tt1), Arc::clone(&tt11)) && safe_equals(Arc::clone(&tt2), Arc::clone(&tt22))
 }
 
+fn diff(x1: u8, y1: u8, x2: u8, y2: u8) -> u8 {
+    return  x2.abs_diff(x1) + y2.abs_diff(y1)
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct DirectionCost {
+    cost: u8,
+    direction: Direction,
+}
+
+impl Ord for DirectionCost {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.cost.cmp(&self.cost)
+    }
+}
+
+// `PartialOrd` needs to be implemented as well.
+impl PartialOrd for DirectionCost {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn directions_heuristic(f1: Field, end: Field) -> Vec<Direction> {
+    let mut result: Vec<_> = Vec::new();
+    let directions = [Direction::SOUTH, Direction::EAST, Direction::WEST, Direction::NORTH];
+    let mut distances = BinaryHeap::new();
+
+    let (x1, y1): (u8, u8);
+    // println!("Field: {}", safe_print(Arc::clone(&f1)));
+    let lf1 = end.lock().unwrap();
+    x1 = lf1.x;
+    y1 = lf1.y;
+    drop(lf1);
+    for d in directions {
+        let t_pos = safe_get_transition(Arc::clone(&f1), d);
+        if t_pos.is_none() {
+            continue;
+        }
+        let t_poss = t_pos.unwrap();
+        let tf2 = t_poss.lock().unwrap();
+        let f2 = tf2.get_field2();
+        drop(tf2);
+        let lff2 = f2.lock().unwrap();
+        let (x2, y2) = (lff2.x, lff2.y);
+        drop(lff2);
+        let cost = diff(x1, y1, x2, y2);
+        // println!("\tCost to {} is {}", safe_print(Arc::clone(&f2)), cost);
+        let dc = DirectionCost{cost: cost, direction: d};
+        distances.push(dc);
+    }
+    while !distances.is_empty() {
+        result.push(distances.pop().unwrap().direction);
+    }
+    // println!("For ({}, {}) best: {:?}", x1, y1, result);
+    result
+}
+
 fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Arc<Mutex<Transition>>>, mut min_transitions: Option<usize>) -> Option<(Path, usize)> {
     // sleep(time::Duration::from_secs(2));
-    println!("Comparing: {:} and {:}", safe_print(Arc::clone(&f1)), safe_print(Arc::clone(&f2)));
+    // println!("Comparing: {:} and {:}", safe_print(Arc::clone(&f1)), safe_print(Arc::clone(&f2)));
     if safe_equals(Arc::clone(&f1), Arc::clone(&f2)) {
         return Some((Path { steps: Vec::new() }, transitions.len()));
     }
     if let Some(curr_min_transition) = min_transitions {
         if transitions.len() == curr_min_transition {
-            println!("Better path was already found.");
+            // println!("Better path was already found.");
             return None;
         }
     }
@@ -321,18 +394,18 @@ fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Ar
             used_key = true;
             // println!("keys: {} (+1)", keys.total);
         } else {
-            println!("key already used.");
+            // println!("key already used.");
         }
     }
-    println!("keys: {}", keys.total);
-    let directions = [Direction::SOUTH, Direction::EAST, Direction::WEST, Direction::NORTH];
+    // println!("keys: {}", keys.total);
+    let directions = directions_heuristic(Arc::clone(&f1), Arc::clone(&f2));
     let mut path: Option<Path> = None;
     for d in directions {
         let t_pos = safe_get_transition(Arc::clone(&f1), d);
         if t_pos.is_none() {
             continue;
         }
-        println!("going {:?}", d);
+        // println!("going {:?}", d);
         let t_ptr = t_pos.unwrap();
         // v.iter().any(|e| e == "hello")
         if !transitions.iter().any(|e| safe_equals_t(Arc::clone(&e), Arc::clone(&t_ptr))) {
@@ -341,14 +414,14 @@ fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Ar
             drop(t);
             if doors {
                 if keys.remove_use() {
-                    println!("keys: {} (-1)", keys.total);
+                    // println!("keys: {} (-1)", keys.total);
                 } else {
-                    println!("no keys left!");
+                    // println!("no keys left!");
                     continue;
                 }
             }
             transitions.push(Arc::clone(&t_ptr));
-            println!("transitions expanded to: {:?}", transitions);
+            // println!("transitions expanded to: {:?}", transitions);
             if let Some((mut steps, new_min_transitions)) = has_path_keys(f, Arc::clone(&f2), keys, transitions, min_transitions) {
                 if let Some(curr_path) = &path {
                     if steps.cost() + 1 < curr_path.cost() {
@@ -364,7 +437,7 @@ fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Ar
             }
             let rt = transitions.pop().unwrap();
             let lrt = rt.lock().unwrap();
-            println!("Removed: {}", lrt);
+            // println!("Removed: {}", lrt);
             drop(lrt);
             if doors {
                 keys.add_use();
@@ -375,7 +448,7 @@ fn has_path_keys(f1: Field, f2: Field, keys: &mut Keys, transitions: &mut Vec<Ar
     }
     if used_key {
         keys.remove();
-        println!("keys: {} (-1)", keys.total);
+        // println!("keys: {} (-1)", keys.total);
     }
     return path.and_then(|p| Some((p, min_transitions.unwrap())));
 }
@@ -472,7 +545,7 @@ mod test {
         ends.push(Arc::clone(&rf2));
         ends.push(Arc::clone(&rf3));
         ends.push(Arc::clone(&rf4));
-        let p = min_path(Arc::clone(&rf1), ends);
+        let p = min_path(Arc::clone(&rf1), ends, crate::maze::Mode::PARALLEL);
         assert_eq!(p.is_some(), true);
         if let Some(pp) = &p {
             pp.print_path();
