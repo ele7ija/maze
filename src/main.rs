@@ -1,12 +1,13 @@
-use std::{env, fs, process, cell::RefCell, rc::Rc};
+use std::{env, fs, process, sync::{Mutex, Arc}};
 use maze::maze;
 
 const USAGE: &str = "maze <file_path>\n\nInputs:\n\tfile_path: Path to a file that contains the maze.";
 const MAZE_X: u8 = 9;
 const MAZE_Y: u8 = 6;
 
-fn read_fields(content: &String) -> Vec<maze::Field> {
+fn read_fields(content: &String) -> (Vec<maze::Field>, Vec<maze::Field>) {
     let mut fields: Vec<maze::Field> = Vec::new();
+    let mut ends: Vec<maze::Field> = Vec::new();
     let (mut x, mut y, mut key, mut end) = (0, 0, false, false);
     content.chars().enumerate().for_each(|(i, c)| {
         // println!("{}:{}", i, c);
@@ -14,9 +15,12 @@ fn read_fields(content: &String) -> Vec<maze::Field> {
             return;
         }
         if i % 15 == 14 {
-            let f = maze::Field::new(RefCell::new(maze::SimpleField::new(x, y, key, end)));
+            let f = maze::Field::new(Mutex::new(maze::SimpleField::new(x, y, key, end)));
             // println!("{}, {}: {}, {}", i, f, f.has_key(), f.is_end());
-            fields.push(f);
+            fields.push(Arc::clone(&f));
+            if end {
+                ends.push(Arc::clone(&f));
+            }
             if x == MAZE_X - 1 {
                 x = 0;
                 y = y + 1;
@@ -33,7 +37,7 @@ fn read_fields(content: &String) -> Vec<maze::Field> {
             end = end && c == '1';
         }
     });
-    fields
+    (fields, ends)
 }
 
 fn get_index(x: u8, y: u8) -> usize {
@@ -86,8 +90,8 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying WEST: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), wd);
-                        maze::Transition::new(wd, &maze::Direction::WEST, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                        println!("Tying WEST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), wd);
+                        maze::Transition::new(wd, &maze::Direction::WEST, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
             }
@@ -96,8 +100,8 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying EAST: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), ed);
-                        maze::Transition::new(ed, &maze::Direction::EAST, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                        println!("Tying EAST: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), ed);
+                        maze::Transition::new(ed, &maze::Direction::EAST, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
             }
@@ -106,8 +110,8 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying NORTH: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), nd);
-                        maze::Transition::new(nd, &maze::Direction::NORTH, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                        println!("Tying NORTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), nd);
+                        maze::Transition::new(nd, &maze::Direction::NORTH, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
             }
@@ -116,8 +120,8 @@ fn tie_fields(content: &String, fields: &mut Vec<maze::Field>) {
                 if f2.is_some() {
                     let rf2 = fields.get(f2.unwrap());
                     if rf2.is_some() {
-                        println!("Tying SOUTH: {} -> {} {}", rf1.borrow(), rf2.unwrap().borrow(), sd);
-                        maze::Transition::new(sd, &maze::Direction::SOUTH, Rc::clone(rf1), Rc::clone(rf2.unwrap()));
+                        println!("Tying SOUTH: {} -> {} {}", rf1.lock().unwrap(), rf2.unwrap().lock().unwrap(), sd);
+                        maze::Transition::new(sd, &maze::Direction::SOUTH, Arc::clone(rf1), Arc::clone(rf2.unwrap()));
                     }
                 }
             }
@@ -166,9 +170,10 @@ fn main() {
         },
     }
 
-    let mut fields = read_fields(&content);
+    let (mut fields, ends) = read_fields(&content);
     tie_fields(&content, &mut fields);
-    let p = maze::has_path(Rc::clone(&fields[0]), Rc::clone(&fields[47]));
+    // let p = maze::has_path(Arc::clone(&fields[0]), Arc::clone(&fields[47]));
+    let p = maze::min_path(Arc::clone(&fields[0]), ends);
     if p.is_some() {
         p.unwrap().print_path();
     } else {
