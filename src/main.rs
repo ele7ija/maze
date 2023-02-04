@@ -1,5 +1,6 @@
+// Autor: Bojan Poprzen, E2-4-2022.
 use std::{env, fs, process, sync::{Mutex, Arc}, time::Instant};
-use maze::maze;
+use lavirint::maze;
 
 const USAGE: &str = "maze <file_path> <mode>\n\nInputs:\n\tfile_path: Path to a file that contains the maze.\n\tmode: accepted values are 's' or 'p', serial or parallel mode.";
 const MAZE_X: u8 = 9;
